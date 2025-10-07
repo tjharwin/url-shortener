@@ -1,6 +1,11 @@
-# url-shortener
+# URL Shortener App
 
-A simple URL Shortening Service that:
--Accepts a long URL and returns a shortened version
--Redirects short links to the original URL
--Handles invalid or empty URLs gracefully
+To run, use `bun run dev`
+
+Open http://localhost:5173 → React frontend loads
+
+Enter a URL → click Shorten → short URL appears
+
+Clicking the short URL redirects via the Bun backend
+
+Invalid or empty URLs show proper error messages
