@@ -1,12 +1,13 @@
 {
   "name": "url-shortener",
   "private": true,
-  "scripts": {
-    "dev": "bunx concurrently \"bun run server/index.ts\" \"bun run client/serve.ts\""
-  },
   "devDependencies": {
-    "concurrently": "^8.2.0"
+    "concurrently": "^9.2.1"
+  },
+  "scripts": {
+    "start": "concurrently \"bun run server\" \"bun run client\"",
+    "server": "bun run server/index.ts",
+    "client": "cd client && bun run dev",
+    "test": "bun test"
   }
 }
-
-  

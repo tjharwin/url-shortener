@@ -1,41 +1,44 @@
-import { serve } from "bun";
-import { Database } from "bun:sqlite";
-import crypto from "crypto";
+import { serve, type Server } from "bun";
+import db from "./db";
+import { generateShortCode } from "./helpers";
 
-// Initialize SQLite database
-const db = new Database("urls.sqlite");
-db.run(`
-  CREATE TABLE IF NOT EXISTS urls (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    code TEXT UNIQUE,
-    original_url TEXT
-  )
-`);
+interface ShortenRequestBody {
+  url: string;
+}
 
-serve({
-  port: 4000,
-  async fetch(req) {
+interface ErrorResponse {
+  error: string;
+}
+
+/**
+ * Main server instance — exported so it can be imported in tests.
+ */
+export const server: Server = serve({
+  port: 3010,
+  async fetch(req: Request): Promise<Response> {
     const url = new URL(req.url);
 
-    // Handle preflight CORS requests
+    // Handle CORS preflight
     if (req.method === "OPTIONS") {
       return new Response(null, {
         headers: {
           "Access-Control-Allow-Origin": "*",
-          "Access-Control-Allow-Methods": "POST, GET, OPTIONS",
+          "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
           "Access-Control-Allow-Headers": "Content-Type",
         },
       });
     }
 
-    // POST /shorten -> create short URL
-    if (req.method === "POST" && url.pathname === "/shorten") {
+    // POST /api/shorten
+    if (req.method === "POST" && url.pathname === "/api/shorten") {
       try {
-        const { url: originalUrl } = await req.json();
+        // Safe cast — validated immediately after
+        const { url: longUrl } = (await req.json()) as ShortenRequestBody;
 
-        // Validate URL
-        if (!originalUrl || !originalUrl.startsWith("http")) {
-          return new Response(JSON.stringify({ error: "Invalid URL" }), {
+        // Validate URL presence
+        if (!longUrl || typeof longUrl !== "string" || !longUrl.trim()) {
+          const errorRes: ErrorResponse = { error: "Please provide a URL" };
+          return new Response(JSON.stringify(errorRes), {
             status: 400,
             headers: {
               "Content-Type": "application/json",
@@ -44,17 +47,32 @@ serve({
           });
         }
 
-        // Generate random short code
-        const code = crypto.randomBytes(3).toString("hex");
+        // Validate URL format
+        try {
+          new URL(longUrl);
+        } catch {
+          const errorRes: ErrorResponse = { error: "Invalid URL format" };
+          return new Response(JSON.stringify(errorRes), {
+            status: 400,
+            headers: {
+              "Content-Type": "application/json",
+              "Access-Control-Allow-Origin": "*",
+            },
+          });
+        }
 
-        // Save to database
-        db.run("INSERT INTO urls (code, original_url) VALUES (?, ?)", [
-          code,
-          originalUrl,
-        ]);
+        // Generate deterministic short code
+        const shortCode = await generateShortCode(longUrl);
 
+        // Insert URL into DB (ignored if already exists)
+        db.run(
+          "INSERT OR IGNORE INTO urls (short_code, original_url) VALUES (?, ?)",
+          [shortCode, longUrl]
+        );
+
+        // Response
         return new Response(
-          JSON.stringify({ short_url: `http://localhost:4000/${code}` }),
+          JSON.stringify({ shortUrl: `http://localhost:3010/${shortCode}` }),
           {
             headers: {
               "Content-Type": "application/json",
@@ -63,34 +81,34 @@ serve({
           }
         );
       } catch (err) {
-        return new Response(
-          JSON.stringify({ error: "Failed to shorten URL" }),
-          {
-            status: 500,
-            headers: {
-              "Content-Type": "application/json",
-              "Access-Control-Allow-Origin": "*",
-            },
-          }
-        );
+        console.error(err);
+        const errorRes: ErrorResponse = { error: "Failed to process request" };
+        return new Response(JSON.stringify(errorRes), {
+          status: 500,
+          headers: {
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "*",
+          },
+        });
       }
     }
 
-    // GET /:code -> redirect to original URL
-    const code = url.pathname.slice(1);
-    if (code) {
+    // Redirect short URL
+    const short = url.pathname.slice(1);
+    if (short) {
       const row = db
-        .query("SELECT original_url FROM urls WHERE code = ?")
-        .get(code) as { original_url: string } | undefined;
-      if (row) return Response.redirect(row.original_url, 302);
-      return new Response("URL not found", { status: 404 });
+        .query<{ original_url: string }, [string]>(
+          "SELECT original_url FROM urls WHERE short_code = ?"
+        )
+        .get(short);
+
+      if (row) {
+        return Response.redirect(row.original_url, 302);
+      }
     }
 
-    // Default response
-    return new Response("URL Shortener API", {
-      headers: { "Content-Type": "text/plain" },
-    });
+    return new Response("Not Found", { status: 404 });
   },
 });
 
-console.log("🚀 Bun URL shortener running on http://localhost:4000");
+console.log("🚀 Backend running at http://localhost:3010");

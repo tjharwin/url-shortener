@@ -2,6 +2,7 @@
   "lockfileVersion": 1,
   "workspaces": {
     "": {
+      "name": "url-shortener",
       "devDependencies": {
         "concurrently": "^9.2.1",
       },

@@ -1,5 +1,11 @@
 # URL Shortener App
 
+This is a simple URL shortening app that uses an SQLite database to store URLs.
+
+URLs are encoded using a SHA-256 hash to ensure uniqueness of the short URL and
+a check is made on the database for existing URLs so that we don't store the same
+URL more than once.
+
 # Setup
 
 ## Install root dependancies
